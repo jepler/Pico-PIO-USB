@@ -50,14 +50,20 @@ static void __no_inline_not_in_flash_func(send_pre)(pio_port_t *pp) {
   SM_SET_CLKDIV(pp->pio_usb_tx, pp->sm_tx, pp->clk_div_fs_tx);
 
   pio_sm_exec(pp->pio_usb_tx, pp->sm_tx, pp->tx_start_instr);
+  pp->pio_usb_tx->irq = IRQ_TX_ALL_MASK;       // clear complete flag
   dma_channel_transfer_from_buffer_now(pp->tx_ch, pre_encoded,
                                        sizeof(pre_encoded));
-  pp->pio_usb_tx->irq = IRQ_TX_ALL_MASK;       // clear complete flag
 
   while ((pp->pio_usb_tx->irq & IRQ_TX_EOP_MASK) == 0) {
     continue;
   }
-  pio_sm_clear_fifos(pp->pio_usb_tx, pp->sm_tx);
+
+  // wait for complete transmission of the PRE packet
+  uint32_t stall_mask = 1 << (PIO_FDEBUG_TXSTALL_LSB + pp->sm_tx);
+  pp->pio_usb_tx->fdebug = stall_mask; // clear sticky stall mask bit
+  while (!(pp->pio_usb_tx->fdebug & stall_mask)) {
+    continue;
+  }
 
   // change bus speed to low-speed
   pp->low_speed = true;
